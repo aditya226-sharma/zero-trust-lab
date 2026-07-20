@@ -11,13 +11,12 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Only run if the deploy secret is configured
-    if: ${{ secrets.DEPLOY_HOST != '' }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Deploy via SSH
+        if: ${{ secrets.DEPLOY_HOST != '' }}
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -46,3 +45,7 @@ jobs:
 
             echo "--- Deployment complete ---"
             docker compose ps
+
+      - name: Skip deploy (secrets not configured)
+        if: ${{ secrets.DEPLOY_HOST == '' }}
+        run: echo "DEPLOY_HOST secret not set — skipping deployment"
