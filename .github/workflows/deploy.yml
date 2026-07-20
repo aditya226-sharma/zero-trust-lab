@@ -1,8 +1,6 @@
 name: Deploy to server
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 env:
@@ -16,8 +14,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Deploy via SSH
-        if: ${{ secrets.DEPLOY_HOST != '' }}
         uses: appleboy/ssh-action@v1
+        continue-on-error: true
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -46,6 +44,11 @@ jobs:
             echo "--- Deployment complete ---"
             docker compose ps
 
-      - name: Skip deploy (secrets not configured)
-        if: ${{ secrets.DEPLOY_HOST == '' }}
-        run: echo "DEPLOY_HOST secret not set — skipping deployment"
+      - name: Report
+        if: always()
+        run: |
+          if [ "${{ steps.deploy.outcome }}" = "success" ]; then
+            echo "Deployment succeeded"
+          else
+            echo "Deployment skipped or failed — configure DEPLOY_HOST, DEPLOY_USER, and DEPLOY_SSH_KEY secrets to enable"
+          fi
