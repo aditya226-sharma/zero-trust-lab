@@ -1,0 +1,18 @@
+<network>
+  <name>untrusted-net</name>
+  <uuid>b2c3d4e5-f6a7-8901-bcde-f12345678901</uuid>
+  <forward mode='nat'>
+    <nat>
+      <port start='1024' end='65535'/>
+    </nat>
+  </forward>
+  <bridge name='virbr2' stp='on' delay='0'/>
+  <mac address='52:54:00:aa:bb:02'/>
+  <domain name='untrusted-net'/>
+  <ip address='10.10.2.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='10.10.2.100' end='10.10.2.200'/>
+      <host mac='52:54:00:02:00:01' name='attacker' ip='10.10.2.10'/>
+    </dhcp>
+  </ip>
+</network>

@@ -1,0 +1,6 @@
+[Unit]
+Description=ZTLab device posture check
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/ztlab/posture_check.py

@@ -1,0 +1,11 @@
+.gstack/
+qa-evidence/
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+.env
+.env.*
+!.env.example
+gateway/certs/*.key
+gateway/posture-data/*.json

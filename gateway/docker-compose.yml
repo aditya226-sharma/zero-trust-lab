@@ -1,0 +1,69 @@
+# Runs on the gateway VM (10.10.1.1).
+#
+# For testing without a real Authentik instance, a mock OIDC provider is
+# included (mock-oidc service). In production, replace with real Authentik
+# (Phase 1) and update oauth2-proxy.cfg + remove extra_hosts.
+#
+# Before first run:
+#   1. Generate a cookie secret: python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+#      and put it in oauth2-proxy/oauth2-proxy.cfg
+#   2. Put the Authentik (or mock) client_secret in oauth2-proxy/oauth2-proxy.cfg
+#   3. mkdir -p ./shared-posture && this becomes the posture store volume
+
+services:
+  opa:
+    image: openpolicyagent/opa:latest
+    command:
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "/policies/policy.rego"
+    volumes:
+      - ./opa/policy.rego:/policies/policy.rego:ro
+    ports:
+      - "8181:8181"  # exposed for direct curl testing in Phase 4/7, remove for anything beyond a lab
+    restart: unless-stopped
+
+  authz-bridge:
+    build: ./authz-bridge
+    environment:
+      OAUTH2_PROXY_AUTH_URL: "http://oauth2-proxy:4180/oauth2/auth"
+      OPA_URL: "http://opa:8181/v1/data/ztlab/authz"
+      POSTURE_STORE_PATH: "/shared/posture.json"
+    volumes:
+      - ./shared-posture:/shared
+    depends_on:
+      - opa
+      - oauth2-proxy
+    restart: unless-stopped
+
+  demo-app:
+    build: ./demo-app
+    restart: unless-stopped
+
+  mock-oidc:
+    build: ./mock-oidc
+    restart: unless-stopped
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:latest
+    volumes:
+      - ./oauth2-proxy/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
+    command: ["--config=/etc/oauth2-proxy.cfg"]
+    depends_on:
+      - mock-oidc
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    ports:
+      - "443:443"
+      - "80:80"
+    depends_on:
+      - authz-bridge
+      - demo-app
+      - oauth2-proxy
+    restart: unless-stopped

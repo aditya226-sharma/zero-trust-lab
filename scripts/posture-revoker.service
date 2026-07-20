@@ -1,0 +1,16 @@
+[Unit]
+Description=ZTLab Posture Revoker — automatic WireGuard + Authentik revocation on posture failure
+Documentation=https://github.com/your-org/ztlab
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/posture_revoker.py
+Restart=always
+RestartSec=5
+User=root
+Environment=AUTHENTIK_TOKEN=<set-this-from-authentik-admin>
+EnvironmentFile=-/etc/ztlab/authentik.env
+
+[Install]
+WantedBy=multi-user.target
