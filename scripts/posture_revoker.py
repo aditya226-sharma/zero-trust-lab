@@ -38,8 +38,8 @@ device_state: dict[str, bool] = {}
 user_device_map: dict[str, str] = {}  # device_id -> user_email
 
 
-def get_wireguard_peers():
-    """Return dict of {public_key: device_id} from wg show."""
+def get_wireguard_peers() -> dict[str, str]:
+    """Return dict of {public_key: allowed_ips} from wg show."""
     try:
         result = subprocess.run(
             ["wg", "show", WG_INTERFACE, "dump"],
@@ -49,7 +49,7 @@ def get_wireguard_peers():
         )
         # First line is interface info, rest are peers
         lines = result.stdout.strip().split("\n")[1:]
-        peers = {}
+        peers: dict[str, str] = {}
         for line in lines:
             parts = line.split("\t")
             if len(parts) >= 5:
@@ -57,12 +57,15 @@ def get_wireguard_peers():
                 allowed_ips = parts[3] if len(parts) > 3 else ""
                 peers[pubkey] = allowed_ips
         return peers
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, IndexError) as e:
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as e:
         log.error("Failed to get WireGuard peers: %s", e)
+        return {}
+    except (IndexError, ValueError) as e:
+        log.error("Failed to parse WireGuard output: %s", e)
         return {}
 
 
-def remove_wireguard_peer(pubkey):
+def remove_wireguard_peer(pubkey: str) -> bool:
     """Remove a peer from WireGuard by public key."""
     try:
         subprocess.run(
@@ -75,9 +78,12 @@ def remove_wireguard_peer(pubkey):
     except subprocess.CalledProcessError as e:
         log.error("Failed to remove WireGuard peer %s: %s", pubkey, e)
         return False
+    except subprocess.TimeoutExpired:
+        log.error("Timed out removing WireGuard peer %s", pubkey)
+        return False
 
 
-def revoke_authentik_sessions(user_email):
+def revoke_authentik_sessions(user_email: str) -> bool:
     """Revoke all Authentik sessions for a user."""
     if not AUTHENTIK_TOKEN:
         log.warning("AUTHENTIK_TOKEN not set — skipping Authentik session revocation")
@@ -121,17 +127,72 @@ def revoke_authentik_sessions(user_email):
     except urllib.error.URLError as e:
         log.error("Authentik unreachable: %s", e.reason)
         return False
-    except Exception as e:
-        log.error("Authentik revocation error: %s", e)
+    except (json.JSONDecodeError, KeyError, TypeError) as e:
+        log.error("Failed to parse Authentik response: %s", e)
         return False
 
 
-def process_posture_log():
+def _write_revocation_log(log_event: dict) -> None:
+    """Append a revocation event to the log file."""
+    revocation_log = "/var/log/posture_revoker.log"
+    try:
+        with open(revocation_log, "a") as f:
+            f.write(json.dumps(log_event) + "\n")
+    except OSError as e:
+        log.error("Failed to write revocation log: %s", e)
+
+
+def _revoke_device(device_id: str, user_email: str, entry: dict) -> None:
+    """Remove WireGuard peer and revoke Authentik sessions for a device."""
+    # Find and remove WireGuard peer by IP match
+    try:
+        device_ip = ipaddress.ip_address(device_id)
+    except ValueError:
+        device_ip = None
+
+    for pubkey, allowed_ips in get_wireguard_peers().items():
+        for cidr in allowed_ips.split(","):
+            cidr = cidr.strip()
+            if not cidr:
+                continue
+            try:
+                net = ipaddress.ip_network(cidr, strict=False)
+                if device_ip and device_ip in net:
+                    remove_wireguard_peer(pubkey)
+                    log.info(
+                        "Revoked WireGuard peer %s for device %s",
+                        pubkey,
+                        device_id,
+                    )
+                    break
+            except ValueError:
+                continue
+
+    # Revoke Authentik sessions
+    if user_email:
+        revoke_authentik_sessions(user_email)
+
+    # Log the revocation event for the dashboard
+    log_event = {
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "event": "automatic_revocation",
+        "device_id": device_id,
+        "user_email": user_email,
+        "trigger": "posture_failure",
+        "posture_entry": entry,
+    }
+    _write_revocation_log(log_event)
+
+
+def process_posture_log() -> None:
     """Read latest entries from posture log and act on failures."""
     try:
         with open(POSTURE_LOG, "r") as f:
             lines = f.readlines()
     except FileNotFoundError:
+        return
+    except OSError as e:
+        log.error("Failed to read posture log: %s", e)
         return
 
     for line in lines:
@@ -155,59 +216,22 @@ def process_posture_log():
                 device_id,
                 user_email,
             )
-
-            # Find and remove WireGuard peer by IP match
-            try:
-                device_ip = ipaddress.ip_address(device_id)
-            except ValueError:
-                device_ip = None
-            for pubkey, allowed_ips in get_wireguard_peers().items():
-                for cidr in allowed_ips.split(","):
-                    cidr = cidr.strip()
-                    if not cidr:
-                        continue
-                    try:
-                        net = ipaddress.ip_network(cidr, strict=False)
-                        if device_ip and device_ip in net:
-                            remove_wireguard_peer(pubkey)
-                            log.info(
-                                "Revoked WireGuard peer %s for device %s",
-                                pubkey,
-                                device_id,
-                            )
-                            break
-                    except ValueError:
-                        continue
-
-            # Revoke Authentik sessions
-            if user_email:
-                revoke_authentik_sessions(user_email)
-
-            # Log the revocation event for the dashboard
-            log_event = {
-                "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "event": "automatic_revocation",
-                "device_id": device_id,
-                "user_email": user_email,
-                "trigger": "posture_failure",
-                "posture_entry": entry,
-            }
-            revocation_log = "/var/log/posture_revoker.log"
-            with open(revocation_log, "a") as f:
-                f.write(json.dumps(log_event) + "\n")
+            _revoke_device(device_id, user_email, entry)
 
         device_state[device_id] = healthy
         if user_email:
             user_device_map[device_id] = user_email
 
 
-def main():
+def main() -> None:
     log.info("Posture revoker started (interval=%ds)", CHECK_INTERVAL)
     while True:
         try:
             process_posture_log()
+        except (OSError, ValueError) as e:
+            log.error("Recoverable error in main loop: %s", e)
         except Exception as e:
-            log.error("Unexpected error: %s", e)
+            log.error("Unexpected error (continuing): %s", e)
         time.sleep(CHECK_INTERVAL)
 
 

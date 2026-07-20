@@ -23,4 +23,3 @@ def demo_app_module():
 @pytest.fixture
 def authz_bridge_module():
     return load_module("ztlab_authz_bridge", "gateway/authz-bridge/app.py")
-

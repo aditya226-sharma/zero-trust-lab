@@ -20,3 +20,25 @@ jobs:
         run: pytest
       - name: Lint with flake8
         run: flake8 .
+
+  opa-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OPA
+        run: |
+          curl -L -o /usr/local/bin/opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x /usr/local/bin/opa
+      - name: Run OPA tests
+        run: opa test gateway/opa/ -v
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build demo-app image
+        run: docker build -t ztlab-demo-app ./app
+      - name: Build authz-bridge image
+        run: docker build -t ztlab-authz-bridge ./gateway/authz-bridge
+      - name: Build mock-oidc image
+        run: docker build -t ztlab-mock-oidc ./gateway/mock-oidc

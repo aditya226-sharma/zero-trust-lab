@@ -21,4 +21,3 @@ def test_demo_app_health_endpoint(demo_app_module):
 
     assert response.status_code == 200
     assert response.get_json() == {"status": "ok"}
-

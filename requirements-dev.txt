@@ -1,3 +1,4 @@
 -r gateway/authz-bridge/requirements.txt
 pytest==8.3.5
+flake8==7.1.1
 

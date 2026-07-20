@@ -18,7 +18,7 @@ import base64
 import json
 import logging
 import os
-import time
+from typing import Any
 
 import requests
 from flask import Flask, request, Response
@@ -27,21 +27,23 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("authz-bridge")
 
-OAUTH2_PROXY_AUTH_URL = os.environ.get(
+OAUTH2_PROXY_AUTH_URL: str = os.environ.get(
     "OAUTH2_PROXY_AUTH_URL", "http://oauth2-proxy:4180/oauth2/auth"
 )
-OPA_URL = os.environ.get("OPA_URL", "http://opa:8181/v1/data/ztlab/authz")
+OPA_URL: str = os.environ.get("OPA_URL", "http://opa:8181/v1/data/ztlab/authz")
 # Lab-simplicity posture store: a JSON file the Phase 2 posture agent writes
 # to, keyed by source IP. In a real deployment this would be a proper store
 # (Redis, a database) keyed by a real device identity, not a spoofable IP —
 # flagged here deliberately as a lab shortcut, see Phase 7 test #3.
-POSTURE_STORE_PATH = os.environ.get("POSTURE_STORE_PATH", "/data/posture.json")
+POSTURE_STORE_PATH: str = os.environ.get(
+    "POSTURE_STORE_PATH", "/data/posture.json"
+)
 
 
-def get_posture(source_ip: str) -> dict:
+def get_posture(source_ip: str) -> dict[str, Any]:
     try:
         with open(POSTURE_STORE_PATH, "r") as f:
-            store = json.load(f)
+            store: dict[str, Any] = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         log.warning("posture store missing or unreadable — failing closed")
         return {"posture": "unhealthy", "reason": "no posture data"}
@@ -52,7 +54,7 @@ def get_posture(source_ip: str) -> dict:
     return entry
 
 
-def _decode_id_token(header_value: str) -> dict:
+def _decode_id_token(header_value: str) -> dict[str, Any]:
     """Base64-decode the JWT payload from an Authorization: Bearer header.
 
     oauth2-proxy already verified the JWT signature before passing it
@@ -61,7 +63,7 @@ def _decode_id_token(header_value: str) -> dict:
     """
     if not header_value.startswith("Bearer "):
         return {}
-    token = header_value[len("Bearer ") :]
+    token = header_value[len("Bearer "):]
     parts = token.split(".")
     if len(parts) != 3:
         return {}
@@ -75,7 +77,7 @@ def _decode_id_token(header_value: str) -> dict:
         return {}
 
 
-def check_identity(incoming_headers) -> dict:
+def check_identity(incoming_headers: Any) -> dict[str, Any]:
     """
     Calls oauth2-proxy's own auth-check endpoint, forwarding the session
     cookie, to find out who the user is and whether they're authenticated.
@@ -86,7 +88,7 @@ def check_identity(incoming_headers) -> dict:
     from the ID token payload rather than from arbitrary headers — this is
     version-independent and reliable.
     """
-    cookie = incoming_headers.get("Cookie", "")
+    cookie: str = incoming_headers.get("Cookie", "")
     try:
         r = requests.get(
             OAUTH2_PROXY_AUTH_URL,
@@ -100,12 +102,18 @@ def check_identity(incoming_headers) -> dict:
     if r.status_code != 202:
         return {"authenticated": False}
 
-    id_token = _decode_id_token(r.headers.get("Authorization", ""))
-    email = id_token.get("email", r.headers.get("X-Auth-Request-Email", ""))
-    auth_time = id_token.get("auth_time", 0)
-    amr = id_token.get("amr", [])
+    id_token: dict[str, Any] = _decode_id_token(
+        r.headers.get("Authorization", "")
+    )
+    email: str = id_token.get(
+        "email", r.headers.get("X-Auth-Request-Email", "")
+    )
+    auth_time: int = id_token.get("auth_time", 0)
+    amr: list[str] = id_token.get("amr", [])
 
-    log.info("id_token claims: email=%s auth_time=%s amr=%s", email, auth_time, amr)
+    log.info(
+        "id_token claims: email=%s auth_time=%s amr=%s", email, auth_time, amr
+    )
 
     return {
         "authenticated": True,
@@ -116,14 +124,16 @@ def check_identity(incoming_headers) -> dict:
 
 
 @app.route("/validate", methods=["GET"])
-def validate():
-    original_uri = request.headers.get("X-Original-URI", "/")
-    source_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+def validate() -> Response:
+    original_uri: str = request.headers.get("X-Original-URI", "/")
+    source_ip: str = request.headers.get(
+        "X-Forwarded-For", request.remote_addr or ""
+    )
 
-    identity = check_identity(request.headers)
-    posture = get_posture(source_ip)
+    identity: dict[str, Any] = check_identity(request.headers)
+    posture: dict[str, Any] = get_posture(source_ip)
 
-    opa_input = {
+    opa_input: dict[str, Any] = {
         "input": {
             "user": {
                 "authenticated": identity.get("authenticated", False),
@@ -139,17 +149,22 @@ def validate():
         }
     }
 
+    allowed: bool = False
+    reason: str = "denied: policy engine unreachable"
+
     try:
-        opa_resp = requests.post(f"{OPA_URL}/allow", json=opa_input, timeout=3)
-        opa_reason_resp = requests.post(f"{OPA_URL}/reason", json=opa_input, timeout=3)
+        opa_resp = requests.post(
+            f"{OPA_URL}/allow", json=opa_input, timeout=3
+        )
+        opa_reason_resp = requests.post(
+            f"{OPA_URL}/reason", json=opa_input, timeout=3
+        )
         allowed = opa_resp.json().get("result", False)
         reason = opa_reason_resp.json().get("result", "unknown")
     except requests.RequestException as e:
         # OPA unreachable => fail closed. This line is the single most
         # important line in this file — do not change it to default-allow.
         log.error("OPA unreachable, failing closed: %s", e)
-        allowed = False
-        reason = "denied: policy engine unreachable"
 
     log.info(
         "decision path=%s ip=%s email=%s allowed=%s reason=%s",
@@ -172,7 +187,7 @@ def validate():
 
 
 @app.route("/healthz")
-def healthz():
+def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
