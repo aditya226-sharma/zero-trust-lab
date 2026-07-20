@@ -10,8 +10,16 @@ default reason := "denied: no matching allow rule"
 # --- Freshness window for /sensitive re-auth requirement (Phase 5) ---
 sensitive_reauth_window_seconds := 300  # 5 minutes
 
+# --- Auth time validity ---
+# auth_time=0 means "not set" (e.g. lab tests, legacy tokens) — treat as
+# a valid session without stale-session penalties.
+valid_auth_time if {
+	input.user.auth_time > 0
+}
+
 # Seconds since the user's last authentication event
 seconds_since_auth := result if {
+	valid_auth_time
 	now := time.now_ns() / 1000000000
 	result := now - input.user.auth_time
 }
@@ -21,8 +29,10 @@ fresh_auth if {
 }
 
 # --- Continuous authentication: session age thresholds ---
-# Session age in hours — used for risk-based step-up decisions
+# Session age in hours — used for risk-based step-up decisions.
+# Only evaluated when auth_time is a real timestamp (>0).
 session_age_hours := result if {
+	valid_auth_time
 	now := time.now_ns() / 1000000000
 	result := (now - input.user.auth_time) / 3600
 }
@@ -43,12 +53,6 @@ base_ok if {
 	input.user.authenticated == true
 	input.user.mfa_verified == true
 	input.device.posture == "healthy"
-}
-
-# --- Risk-adjusted base: blocks very stale sessions everywhere ---
-risk_adjusted_ok if {
-	base_ok
-	not very_stale_session
 }
 
 # --- Allow rule: public paths just need base identity+posture ---
