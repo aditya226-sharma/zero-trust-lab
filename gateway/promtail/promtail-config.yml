@@ -1,0 +1,67 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  - job_name: ztlab-nginx
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          __path__: /var/log/nginx/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<remote_addr>\S+) - .* \[(?P<time_local>[^\]]+)\] "(?P<method>\S+) (?P<uri>\S+) [^"]*" (?P<status>\d+) (?P<body_bytes_sent>\d+)'
+      - labels:
+          method:
+          status:
+      - timestamp:
+          source: time_local
+          format: "02/Jan/2006:15:04:05 -0700"
+
+  - job_name: ztlab-authz-bridge
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: authz-bridge
+          __path__: /var/log/authz-bridge/*.log
+
+  - job_name: ztlab-demo-app
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: demo-app
+          __path__: /var/log/demo-app/*.log
+
+  - job_name: ztlab-opa
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: opa
+          __path__: /var/log/opa/*.log
+
+  - job_name: ztlab-device-posture
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: device-posture
+          __path__: /var/log/device_posture.log
+    pipeline_stages:
+      - json:
+          expressions:
+            healthy: healthy
+            device_id: device_id
+      - labels:
+          healthy:
+          device_id:

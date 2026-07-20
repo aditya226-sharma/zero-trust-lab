@@ -1,5 +1,5 @@
 .PHONY: help test lint opa-test build up down logs clean create-vms \
-       prod-up prod-down prod-logs
+       prod-up prod-down prod-logs dashboard logging-up logging-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -35,6 +35,17 @@ prod-down: ## Stop production stack
 
 prod-logs: ## Tail production stack logs
 	cd gateway && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+
+dashboard: ## Open admin dashboard in browser (requires gateway up)
+	@echo "Admin dashboard: http://localhost/admin"
+	@echo "Grafana:          http://localhost:3000 (admin/ztlab-grafana)"
+	@echo "Loki API:         http://localhost:3100/ready"
+
+logging-up: ## Start the full stack with logging (Loki + Grafana)
+	cd gateway && docker compose --profile logging up -d
+
+logging-down: ## Stop the logging stack
+	cd gateway && docker compose --profile logging down
 
 clean: ## Remove Python caches and pytest caches
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

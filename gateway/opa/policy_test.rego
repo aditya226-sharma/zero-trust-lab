@@ -116,3 +116,50 @@ test_allow_sensitive_at_boundary if {
 test_deny_sensitive_one_second_over if {
 	not allow with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 301, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/sensitive"}
 }
+
+# ===========================================================================
+# CONTINUOUS AUTHENTICATION TESTS (New Feature)
+# ===========================================================================
+
+# ---------------------------------------------------------------------------
+# DENY: very stale session (>24h) blocked on public paths
+# ---------------------------------------------------------------------------
+test_deny_very_stale_session_on_public if {
+	not allow with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 90000, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/public"}
+}
+
+test_deny_very_stale_session_reason if {
+	reason == "denied: session too old (>24h), full re-authentication required" with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 90000, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/public"}
+}
+
+# ---------------------------------------------------------------------------
+# DENY: stale session (>8h) blocked on /sensitive paths
+# ---------------------------------------------------------------------------
+test_deny_stale_session_on_sensitive if {
+	not allow with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 36000, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/sensitive"}
+}
+
+test_deny_stale_session_on_sensitive_reason if {
+	reason == "denied: session stale (>8h), step-up re-auth required for sensitive" with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 36000, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/sensitive"}
+}
+
+# ---------------------------------------------------------------------------
+# ALLOW: session at 7h (just under 8h threshold) on /sensitive with fresh re-auth
+# ---------------------------------------------------------------------------
+test_allow_session_under_8h_with_fresh_reauth if {
+	allow with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": time.now_ns() / 1000000000, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/sensitive"}
+}
+
+# ---------------------------------------------------------------------------
+# ALLOW: fresh session (<24h) on public paths still works
+# ---------------------------------------------------------------------------
+test_allow_fresh_session_on_public if {
+	allow with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 3600, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/public"}
+}
+
+# ---------------------------------------------------------------------------
+# DENY: 25h session on /sensitive (both very_stale and needs re-auth)
+# ---------------------------------------------------------------------------
+test_deny_very_stale_on_sensitive if {
+	not allow with input as {"user": {"authenticated": true, "mfa_verified": true, "auth_time": (time.now_ns() / 1000000000) - 93600, "email": "a@b.c"}, "device": {"ip": "10.10.1.50", "posture": "healthy"}, "path": "/sensitive"}
+}

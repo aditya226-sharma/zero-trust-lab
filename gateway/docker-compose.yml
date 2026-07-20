@@ -36,8 +36,16 @@ services:
       OAUTH2_PROXY_AUTH_URL: "http://oauth2-proxy:4180/oauth2/auth"
       OPA_URL: "http://opa:8181/v1/data/ztlab/authz"
       POSTURE_STORE_PATH: "/shared/posture.json"
+      WG_INTERFACE: "wg0"
+      WG_SUBNET: "10.8.0"
+      PEERS_CONF_PATH: "/data/peers.conf"
+      AUDIT_LOG_PATH: "/data/audit.jsonl"
+      ADMIN_TOKEN: "${ADMIN_TOKEN:-ztlab-admin-token}"
+      MAX_POSTURE_AGE_SECONDS: "300"
+      RISK_THRESHOLD: "70"
     volumes:
       - ./shared-posture:/shared
+      - ./authz-bridge/data:/data
     depends_on:
       opa:
         condition: service_healthy
@@ -92,6 +100,7 @@ services:
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/certs:/etc/nginx/certs:ro
+      - nginx-logs:/var/log/nginx
     ports:
       - "443:443"
       - "80:80"
@@ -109,3 +118,61 @@ services:
       retries: 3
       start_period: 5s
     restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.4.2
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - nginx-logs:/var/log/nginx:ro
+      - /var/log:/var/log/host:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.0.2
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ztlab-grafana
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  nginx-logs:
+  loki-data:
+  grafana-data:

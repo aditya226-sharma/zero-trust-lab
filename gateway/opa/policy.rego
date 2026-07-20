@@ -20,6 +20,24 @@ fresh_auth if {
 	seconds_since_auth <= sensitive_reauth_window_seconds
 }
 
+# --- Continuous authentication: session age thresholds ---
+# Session age in hours — used for risk-based step-up decisions
+session_age_hours := result if {
+	now := time.now_ns() / 1000000000
+	result := (now - input.user.auth_time) / 3600
+}
+
+# --- Risk scoring for continuous authentication ---
+# Stale session (> 8 hours) requires step-up for sensitive paths
+stale_session if {
+	session_age_hours > 8
+}
+
+# Very stale session (> 24 hours) requires step-up for ALL paths
+very_stale_session if {
+	session_age_hours > 24
+}
+
 # --- Core identity + posture gate, applies to every path ---
 base_ok if {
 	input.user.authenticated == true
@@ -27,10 +45,17 @@ base_ok if {
 	input.device.posture == "healthy"
 }
 
+# --- Risk-adjusted base: blocks very stale sessions everywhere ---
+risk_adjusted_ok if {
+	base_ok
+	not very_stale_session
+}
+
 # --- Allow rule: public paths just need base identity+posture ---
 allow if {
 	base_ok
 	not startswith(input.path, "/sensitive")
+	not very_stale_session
 }
 
 # --- Allow rule: /sensitive additionally needs a fresh re-auth ---
@@ -38,6 +63,20 @@ allow if {
 	base_ok
 	startswith(input.path, "/sensitive")
 	fresh_auth
+}
+
+# --- Deny rule: very stale sessions blocked everywhere ---
+reason := "denied: session too old (>24h), full re-authentication required" if {
+	base_ok
+	very_stale_session
+}
+
+# --- Deny rule: stale sessions blocked from sensitive paths ---
+reason := "denied: session stale (>8h), step-up re-auth required for sensitive" if {
+	base_ok
+	stale_session
+	not fresh_auth
+	startswith(input.path, "/sensitive")
 }
 
 # --- Human-readable deny reasons, useful in logs and in Phase 7 testing ---
@@ -60,6 +99,7 @@ reason := "denied: sensitive path requires re-auth within 5 minutes" if {
 	base_ok
 	startswith(input.path, "/sensitive")
 	not fresh_auth
+	not stale_session
 }
 
 reason := "allowed" if {
