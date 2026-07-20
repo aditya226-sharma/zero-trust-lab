@@ -6,9 +6,18 @@ deliberate: the app trusts the enforcement layer completely and stays
 dumb, which is the point of putting the PEP in front of it rather than
 inside it.
 """
+import logging
+import time
+
 from flask import Flask, request
 
 app = Flask(__name__)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+log = logging.getLogger("demo-app")
 
 PAGE_TEMPLATE = """
 <!DOCTYPE html>
@@ -61,8 +70,31 @@ PAGE_TEMPLATE = """
 """
 
 
+@app.before_request
+def _start_timer():
+    request._start_time = time.monotonic()
+
+
+@app.after_request
+def _log_request(response):
+    elapsed_ms = (time.monotonic() - getattr(request, "_start_time", 0)) * 1000
+    identity = request.headers.get("X-Auth-Request-Email", "-")
+    reason = request.headers.get("X-ZTLab-Reason", "-")
+    log.info(
+        "%s %s %s identity=%s reason=%s %.1fms",
+        request.method,
+        request.path,
+        response.status_code,
+        identity,
+        reason,
+        elapsed_ms,
+    )
+    return response
+
+
 @app.route("/public")
 def public():
+    """Public zone — accessible with any valid session + healthy posture."""
     return PAGE_TEMPLATE.format(
         zone_label="PUBLIC ZONE",
         banner_color="#3ddc97",
@@ -75,6 +107,7 @@ def public():
 
 @app.route("/sensitive")
 def sensitive():
+    """Sensitive zone — requires fresh WebAuthn re-auth within 5 minutes."""
     return PAGE_TEMPLATE.format(
         zone_label="SENSITIVE ZONE — RE-AUTH REQUIRED",
         banner_color="#ff6b6b",
@@ -87,6 +120,7 @@ def sensitive():
 
 @app.route("/healthz")
 def healthz():
+    """Liveness probe — returns 200 when the process is up."""
     return {"status": "ok"}
 
 

@@ -106,3 +106,49 @@ Each phase has a detailed checkpoint document with pre-reqs, failure modes, roll
 - oauth2-proxy header names are version-dependent — must verify against installed version
 - No persistent log storage (Docker default loses on restart)
 - Mock re-auth (auth_time from OIDC claim, not actual WebAuthn re-prompt)
+
+## Testing
+
+### Python unit tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -v
+```
+
+### OPA policy tests
+
+```bash
+# Install OPA (macOS)
+curl -L -o /usr/local/bin/opa https://openpolicyagent.org/downloads/latest/opa_darwin_amd64
+chmod +x /usr/local/bin/opa
+
+# Run tests
+opa test gateway/opa/ -v
+```
+
+### Lint
+
+```bash
+flake8 .
+```
+
+### All at once
+
+```bash
+make test lint
+```
+
+## Makefile
+
+Common tasks are available via `make`:
+
+| Command | Description |
+|---------|-------------|
+| `make test` | Run Python + OPA tests |
+| `make lint` | Run flake8 |
+| `make build` | Build all Docker images |
+| `make up` | Start gateway stack (detached) |
+| `make down` | Stop gateway stack |
+| `make logs` | Tail gateway stack logs |
+| `make clean` | Remove caches |

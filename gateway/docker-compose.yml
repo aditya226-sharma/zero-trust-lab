@@ -22,6 +22,12 @@ services:
       - ./opa/policy.rego:/policies/policy.rego:ro
     ports:
       - "8181:8181"  # exposed for direct curl testing in Phase 4/7, remove for anything beyond a lab
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   authz-bridge:
@@ -33,16 +39,36 @@ services:
     volumes:
       - ./shared-posture:/shared
     depends_on:
-      - opa
-      - oauth2-proxy
+      opa:
+        condition: service_healthy
+      oauth2-proxy:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9191/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   demo-app:
     build: ../app
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   mock-oidc:
     build: ./mock-oidc
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/.well-known/openid-configuration')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
 
   oauth2-proxy:
@@ -51,7 +77,14 @@ services:
       - ./oauth2-proxy/oauth2-proxy.cfg:/etc/oauth2-proxy.cfg:ro
     command: ["--config=/etc/oauth2-proxy.cfg"]
     depends_on:
-      - mock-oidc
+      mock-oidc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4180/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     restart: unless-stopped
 
   nginx:
@@ -63,7 +96,16 @@ services:
       - "443:443"
       - "80:80"
     depends_on:
-      - authz-bridge
-      - demo-app
-      - oauth2-proxy
+      authz-bridge:
+        condition: service_healthy
+      demo-app:
+        condition: service_healthy
+      oauth2-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     restart: unless-stopped
