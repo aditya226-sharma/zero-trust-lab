@@ -1,0 +1,18 @@
+# Production override — pulls pre-built images from GHCR instead of
+# building locally. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Requires: docker login ghcr.io (or set GHCR_TOKEN env var)
+
+services:
+  authz-bridge:
+    image: ghcr.io/aditya226-sharma/ztlab-authz-bridge:latest
+    build: null
+
+  demo-app:
+    image: ghcr.io/aditya226-sharma/ztlab-demo-app:latest
+    build: null
+
+  mock-oidc:
+    image: ghcr.io/aditya226-sharma/ztlab-mock-oidc:latest
+    build: null

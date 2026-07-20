@@ -1,4 +1,5 @@
-.PHONY: help test lint opa-test build up down clean
+.PHONY: help test lint opa-test build up down logs clean create-vms \
+       prod-up prod-down prod-logs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -12,12 +13,12 @@ test: ## Run all tests (Python + OPA)
 lint: ## Run flake8 linter
 	flake8 .
 
-build: ## Build all Docker images
+build: ## Build all Docker images locally
 	docker build -t ztlab-demo-app ./app
 	docker build -t ztlab-authz-bridge ./gateway/authz-bridge
 	docker build -t ztlab-mock-oidc ./gateway/mock-oidc
 
-up: ## Start the gateway stack (detached)
+up: ## Start the gateway stack locally (detached)
 	cd gateway && docker compose up -d
 
 down: ## Stop the gateway stack
@@ -25,6 +26,15 @@ down: ## Stop the gateway stack
 
 logs: ## Tail gateway stack logs
 	cd gateway && docker compose logs -f
+
+prod-up: ## Start using pre-built GHCR images (detached)
+	cd gateway && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+prod-down: ## Stop production stack
+	cd gateway && docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+prod-logs: ## Tail production stack logs
+	cd gateway && docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
 
 clean: ## Remove Python caches and pytest caches
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

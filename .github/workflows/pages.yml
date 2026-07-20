@@ -1,0 +1,102 @@
+name: Deploy docs to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "phase*.md"
+      - "CONTRIBUTING.md"
+      - "SECURITY.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build site
+        run: |
+          mkdir -p _site
+
+          # Copy markdown files to site root
+          for f in README.md phase*.md CONTRIBUTING.md SECURITY.md; do
+            [ -f "$f" ] && cp "$f" _site/
+          done
+
+          # Create an index.html that redirects to README
+          cat > _site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta http-equiv="refresh" content="0; url=README.html">
+            <title>ZTLab — Zero Trust Lab</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="README.html">documentation</a>...</p>
+          </body>
+          </html>
+          EOF
+
+          # Convert .md to .html using a simple template
+          for md in _site/*.md; do
+            html="${md%.md}.html"
+            title=$(head -1 "$md" | sed 's/^#* *//')
+            cat > "$html" << HEADER
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>${title} — ZTLab</title>
+            <style>
+              body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 2rem; line-height: 1.6; color: #1a1a2e; }
+              pre { background: #1a1d24; color: #e6e6e6; padding: 1rem; border-radius: 8px; overflow-x: auto; }
+              code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+              pre code { background: none; padding: 0; }
+              table { border-collapse: collapse; width: 100%; }
+              th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+              th { background: #f5f5f5; }
+              a { color: #0066cc; }
+              h1 { border-bottom: 2px solid #3ddc97; padding-bottom: 0.3em; }
+              h2 { border-bottom: 1px solid #eee; padding-bottom: 0.2em; }
+            </style>
+          </head>
+          <body>
+          HEADER
+          # Append the markdown content (raw, for GitHub-flavored rendering we rely on the browser)
+          cat "$md" >> "$html"
+          cat >> "$html" << 'FOOTER'
+          </body>
+          </html>
+          FOOTER
+            rm "$md"
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -152,3 +152,35 @@ Common tasks are available via `make`:
 | `make down` | Stop gateway stack |
 | `make logs` | Tail gateway stack logs |
 | `make clean` | Remove caches |
+
+## Deployment
+
+### Docker images (GHCR)
+
+Pre-built images are published to GitHub Container Registry on each release:
+
+```bash
+# Pull images
+docker pull ghcr.io/aditya226-sharma/ztlab-demo-app:latest
+docker pull ghcr.io/aditya226-sharma/ztlab-authz-bridge:latest
+docker pull ghcr.io/aditya226-sharma/ztlab-mock-oidc:latest
+
+# Or use the production override
+make prod-up
+```
+
+### Auto-deploy to server
+
+The `deploy.yml` workflow SSHs into your server on every push to `main`. Set these repository secrets:
+
+| Secret | Description |
+|--------|-------------|
+| `DEPLOY_HOST` | Server IP or hostname |
+| `DEPLOY_USER` | SSH username |
+| `DEPLOY_SSH_KEY` | Private SSH key (ed25519 recommended) |
+
+The workflow clones/pulls the repo to `/opt/ztlab` and runs `docker compose up -d`.
+
+### GitHub Pages
+
+Documentation is auto-deployed to GitHub Pages on every push to `main`. Enable it in repo Settings > Pages > Source: GitHub Actions.

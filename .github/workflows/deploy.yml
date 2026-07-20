@@ -1,0 +1,48 @@
+name: Deploy to server
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DEPLOY_PATH: /opt/ztlab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Only run if the deploy secret is configured
+    if: ${{ secrets.DEPLOY_HOST != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+
+            echo "--- Pulling latest code ---"
+            if [ -d "${{ env.DEPLOY_PATH }}" ]; then
+              cd "${{ env.DEPLOY_PATH }}"
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git "${{ env.DEPLOY_PATH }}"
+              cd "${{ env.DEPLOY_PATH }}"
+            fi
+
+            echo "--- Building and restarting services ---"
+            cd gateway
+            docker compose pull || true
+            docker compose build
+            docker compose up -d --remove-orphans
+
+            echo "--- Cleaning up dangling images ---"
+            docker image prune -f
+
+            echo "--- Deployment complete ---"
+            docker compose ps
