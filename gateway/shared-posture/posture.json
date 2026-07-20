@@ -1,0 +1,8 @@
+{
+  "127.0.0.1": {"posture": "healthy", "device_id": "local-test", "os_version": "Debian 13", "last_seen": 1784569000},
+  "172.18.0.1": {"posture": "healthy", "device_id": "docker-host", "os_version": "Debian 13", "last_seen": 1784569000},
+  "172.18.0.2": {"posture": "healthy", "device_id": "test-device-1", "os_version": "Ubuntu 24.04", "last_seen": 1784418000},
+  "172.18.0.4": {"posture": "healthy", "device_id": "test-device-2", "os_version": "Debian 13", "last_seen": 1784418000},
+  "172.18.0.6": {"posture": "healthy", "device_id": "test-device-3", "os_version": "Debian 13", "last_seen": 1784418000},
+  "172.18.0.7": {"posture": "healthy", "device_id": "test-device-4", "os_version": "Debian 13", "last_seen": 1784418000}
+}

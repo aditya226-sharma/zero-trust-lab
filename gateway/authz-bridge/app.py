@@ -67,7 +67,7 @@ def _decode_id_token(header_value: str) -> dict:
         return {}
     try:
         payload = parts[1]
-        padded = payload + "=" * (4 - len(payload) % 4)
+        padded = payload + "=" * ((4 - len(payload) % 4) % 4)
         decoded = base64.urlsafe_b64decode(padded)
         return json.loads(decoded)
     except (ValueError, json.JSONDecodeError):

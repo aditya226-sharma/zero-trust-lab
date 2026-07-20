@@ -30,13 +30,13 @@ base_ok if {
 # --- Allow rule: public paths just need base identity+posture ---
 allow if {
 	base_ok
-	input.path != "/sensitive"
+	not startswith(input.path, "/sensitive")
 }
 
 # --- Allow rule: /sensitive additionally needs a fresh re-auth ---
 allow if {
 	base_ok
-	input.path == "/sensitive"
+	startswith(input.path, "/sensitive")
 	fresh_auth
 }
 
@@ -58,7 +58,7 @@ reason := "denied: device posture unhealthy" if {
 
 reason := "denied: sensitive path requires re-auth within 5 minutes" if {
 	base_ok
-	input.path == "/sensitive"
+	startswith(input.path, "/sensitive")
 	not fresh_auth
 }
 

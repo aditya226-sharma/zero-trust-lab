@@ -12,11 +12,13 @@ Usage:
   python3 posture_revoker.py
 """
 
+import ipaddress
 import json
 import logging
 import os
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 
@@ -84,7 +86,7 @@ def revoke_authentik_sessions(user_email):
     try:
         # 1. Look up user by email
         req = urllib.request.Request(
-            f"{AUTHENTIK_API_BASE}/users/?search={urllib.request.quote(user_email)}",
+            f"{AUTHENTIK_API_BASE}/users/?search={urllib.parse.quote(user_email)}",
             headers={"Authorization": f"Bearer {AUTHENTIK_TOKEN}"},
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -154,15 +156,28 @@ def process_posture_log():
                 user_email,
             )
 
-            # Find and remove WireGuard peer
+            # Find and remove WireGuard peer by IP match
+            try:
+                device_ip = ipaddress.ip_address(device_id)
+            except ValueError:
+                device_ip = None
             for pubkey, allowed_ips in get_wireguard_peers().items():
-                # Match by allowed IP (which contains the device ID range)
-                if device_id in allowed_ips:
-                    remove_wireguard_peer(pubkey)
-                    log.info(
-                        "Revoked WireGuard peer %s for device %s", pubkey, device_id
-                    )
-                    break
+                for cidr in allowed_ips.split(","):
+                    cidr = cidr.strip()
+                    if not cidr:
+                        continue
+                    try:
+                        net = ipaddress.ip_network(cidr, strict=False)
+                        if device_ip and device_ip in net:
+                            remove_wireguard_peer(pubkey)
+                            log.info(
+                                "Revoked WireGuard peer %s for device %s",
+                                pubkey,
+                                device_id,
+                            )
+                            break
+                    except ValueError:
+                        continue
 
             # Revoke Authentik sessions
             if user_email:

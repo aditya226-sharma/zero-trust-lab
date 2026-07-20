@@ -12,6 +12,7 @@ results in "unhealthy", never a silent default to "healthy". This is the
 single most important property of this file — do not "fix" a flaky query
 by defaulting it to pass.
 """
+
 import json
 import socket
 import subprocess
@@ -34,9 +35,15 @@ def run_osquery(sql: str):
             check=True,
         )
         return json.loads(result.stdout)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
-            json.JSONDecodeError, FileNotFoundError) as e:
-        print(f"osquery query failed, treating as unhealthy signal: {e}", file=sys.stderr)
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        json.JSONDecodeError,
+        FileNotFoundError,
+    ) as e:
+        print(
+            f"osquery query failed, treating as unhealthy signal: {e}", file=sys.stderr
+        )
         return None  # caller must treat None as a failed/unhealthy signal
 
 
@@ -55,7 +62,10 @@ def check_patch_age() -> bool:
     try:
         result = subprocess.run(
             ["stat", "-c", "%Y", "/var/log/apt/history.log"],
-            capture_output=True, text=True, timeout=5, check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=True,
         )
         last_modified = int(result.stdout.strip())
         age_days = (time.time() - last_modified) / 86400
@@ -97,7 +107,11 @@ def main():
     except (FileNotFoundError, json.JSONDecodeError):
         store = {}
 
-    my_ip = socket.gethostbyname(socket.gethostname())
+    hostname = socket.gethostname()
+    try:
+        my_ip = socket.gethostbyname(hostname)
+    except socket.gaierror:
+        my_ip = hostname if ":" in hostname or "." in hostname else "127.0.0.1"
     store[my_ip] = {
         "posture": "healthy" if healthy else "unhealthy",
         **verdict,
