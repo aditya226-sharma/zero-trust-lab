@@ -38,7 +38,7 @@ services:
     restart: unless-stopped
 
   demo-app:
-    build: ./demo-app
+    build: ../app
     restart: unless-stopped
 
   mock-oidc:
